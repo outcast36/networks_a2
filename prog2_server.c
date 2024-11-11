@@ -97,18 +97,19 @@ int transmit(const void* buf, size_t len, int mode, int p1_sock, int p2_sock, in
 // char indicating whether it is player 1 (‘1’) or player 2 (‘2’)
 // uint8_t indicating the number of letters on the “board”
 // uint8_t indicating the number of seconds you have per turn
-int setupClient(struct sockaddr_in *cad, GameInfo* params, int *alen, int *sd_client, int sd_server) {
+int setupClient(struct sockaddr_in *cad, GameInfo* params, int *alen, int sd_server) {
 	alen=sizeof(cad);
-	if ((*sd_client = accept4(sd_server,(struct sockaddr *) &cad,&alen,SOCK_NONBLOCK)) < 0) {
+	int sd_client;
+	if ((sd_client = accept4(sd_server,(struct sockaddr *) &cad,&alen,SOCK_NONBLOCK)) < 0) {
 		fprintf(stderr, "Error: Accept new player failed\n");
 		return -1; 
 	}
-	if (send(*sd_client, params, sizeof(params),0) < 0) {
+	if (send(sd_client, params, sizeof(params),0) < 0) {
 		fprintf(stderr, "Error: Send client parameters failed\n");
 		close(*sd_client);
 		return -1; 
 	}
-	return 0;
+	return sd_client;
 }
 
 void setupRound(GameState* game) {

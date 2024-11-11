@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 	setupOutput(&gp);
-
+	/*
 	while (1) {
 		int n;
 		cur <- get current game state
@@ -131,6 +131,7 @@ int main(int argc, char **argv) {
 			break; 
 		}
 	}
+	*/
 	close(sd);
 	exit(EXIT_SUCCESS);
 }
