@@ -1,3 +1,5 @@
+#include "trie.h"
+
 // Game info remains constant over a single instance of a game
 typedef struct {
 	char playerNum;
@@ -14,3 +16,5 @@ typedef struct {
 	uint8_t score1;
 	uint8_t score2;
 } GameState;
+
+#define MAX_WORD_LEN 100

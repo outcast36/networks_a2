@@ -12,22 +12,6 @@
 #include <stdbool.h>
 #include "prog2.h"
 
-void receiveState() {
-
-}
-
-void sendGuess() {
-
-}
-
-void setupOutput(const GameInfo* params) {
-	char p=params->playerNum;
-	int oppNumber=(atoi(&p)%2)+1;
-	printf("You are Player %c... ",p);
-	printf("the game will begin when Player %d joins.\n",oppNumber);
-	printf("Board size: %d\n",params->boardSize);
-	printf("Seconds per turn: %d\n",params->roundDuration);
-}
 
 // null byte not needed since board is generated as char array with no spaces
 void displayBoard(const char* board, int boardSize) {
@@ -38,26 +22,133 @@ void displayBoard(const char* board, int boardSize) {
 	printf("\n");
 }
 
-void roundOutput(const GameState* cur, const char playerNum) {
-	printf("Round %d:\n", cur->roundNumber);
-	printf("Score: ");
-	if (playerNum=='2') printf("%d - %d\n", cur->score2, cur->score1);
-	else printf("%d - %d\n", cur->score1, cur->score2);
+
+bool receiveState(int sd, int boardSize, const char playerNum) {
+
+	uint8_t score1, score2;
+	int roundNumber;
+	char board[boardSize];
+
+	if (recv(sd, &score1, sizeof(uint8_t), 0) != sizeof(uint8_t)){
+		fprintf(stderr,"Error: Receiving score1 failed\n");			
+		exit(EXIT_FAILURE);
+	}
+
+	if (recv(sd, &score2, sizeof(uint8_t), 0) != sizeof(uint8_t)){
+		fprintf(stderr,"Error: Receiving score2 failed\n");			
+		exit(EXIT_FAILURE);
+	}
+	if (recv(sd, &roundNumber, sizeof(int), 0) != sizeof(int)){
+		fprintf(stderr,"Error: Receiving roundNumber failed\n");			
+		exit(EXIT_FAILURE);
+	}
+	if (recv(sd, &board, boardSize, 0) != boardSize){
+		fprintf(stderr,"Error: Receiving board failed\n");			
+		exit(EXIT_FAILURE);
+	}
+
+	if (score1 == 3 || score2 == 3) {
+		bool p1_win = (score1==3) && (playerNum=='1');
+		bool p2_win = (score2==3) && (playerNum=='2');
+
+		if (p1_win || p2_win) printf("You won!\n");
+		else printf("You Lost.\n");
+
+		return false;
+
+	} else {
+		printf("Round %d:\n", roundNumber);
+		printf("Score: ");
+		if (playerNum=='2') printf("%d - %d\n", score2, score1);
+		else printf("%d - %d\n", score1, score2);
+		displayBoard(board, boardSize);
+
+		return true;
+	}
 }
 
-void endOutput(const GameState* cur, const char playerNum) {
-	bool p1_win = (cur->score1==3) && (playerNum=='1');
-	bool p2_win = (cur->score2==3) && (playerNum=='2');
-	if (p1_win || p2_win) printf("You won!\n");
-	else printf("You Lost.\n");
+void setupOutput(const GameInfo* params) {
+	char p = params->playerNum;
+	printf("You are Player %c... ",p);
+	int oppNumber=(atoi(&p)%2)+1;
+	
+	printf("the game will begin when Player %d joins.\n",oppNumber);
+	printf("Board size: %d\n",params->boardSize);
+	printf("Seconds per turn: %d\n",params->roundDuration);
+}
+
+bool clientTurn(int sd) {
+	char code;
+	if (recv(sd, &code, sizeof(code), 0) != sizeof(char)){
+		fprintf(stderr,"Error: Receiving code failed\n");			
+		exit(EXIT_FAILURE);
+	}
+
+	if (code == 'Y') {
+		printf("Your turn, enter word: ");
+
+		char buffer[MAX_WORD_LEN];
+		if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+	        printf("Error reading input\n");
+	        exit(EXIT_FAILURE);
+	    }
+
+	    uint8_t word_len = strlen(buffer) - 1;
+
+	    if (send(sd, &word_len, sizeof(word_len), 0) < 0) {
+	    	printf("Sending word_len failed\n");
+	    	exit(EXIT_FAILURE);
+	    }
+
+		if (send(sd, &buffer, word_len, 0) < 0) {
+	    	printf("Sending word failed\n");
+	    	exit(EXIT_FAILURE);
+		}
+
+		uint8_t ret_code;
+
+		if (recv(sd, &ret_code, sizeof(ret_code), 0) != sizeof(ret_code)){
+			fprintf(stderr,"Error: Receiving ret_code failed\n");			
+			exit(EXIT_FAILURE);
+		}
+
+		if (ret_code == 0) {
+			printf("Invalid word!\n");
+			return false;
+		} else {
+			printf("Valid word!\n");
+		}
+
+	} else {
+		printf("Please wait for opponent to enter word...\n");
+
+		uint8_t word_len;
+		if (recv(sd, &word_len, sizeof(word_len), 0) != sizeof(word_len)){
+			fprintf(stderr,"Error: Receiving word_len failed\n");			
+			exit(EXIT_FAILURE);
+		}
+
+		if (word_len > 0) {
+			char word[word_len+1];
+			if (recv(sd, &word, sizeof(word), 0) != sizeof(word)){
+				fprintf(stderr,"Error: Receiving word failed\n");			
+				exit(EXIT_FAILURE);
+			}
+			word[word_len] = '\0';
+			printf("Opponent entered \"%s\"\n", word);
+		} else {
+			printf("Opponent lost the round!\n");
+			return false;
+		}
+	}
+	return true;
 }
 
 int main(int argc, char **argv) {
 	struct hostent *ptrh; /* pointer to a host table entry */
 	struct protoent *ptrp; /* pointer to a protocol table entry */
 	struct sockaddr_in sad; /* structure to hold an IP address */
-	GameInfo* gp; /* game parameters: p1 or p2, board size, and time/round */
-	GameState* cur; /* current game state */
+	GameInfo gi; /* game parameters: p1 or p2, board size, and time/round */
 	char input[256]; /* buffer to hold the user's input */
 	char *host; /* pointer to host name */
 	int sd; /* socket descriptor */
@@ -110,28 +201,23 @@ int main(int argc, char **argv) {
 		fprintf(stderr,"connect failed\n");
 		exit(EXIT_FAILURE);
 	}
-	if (recv(sd, &gp, sizeof(gp), 0) != sizeof(gp)){
-		fprintf(stderr,"Error: Receiving gp failed\n");			
+
+	if (recv(sd, &gi, sizeof(gi), 0) != sizeof(gi)){
+		fprintf(stderr,"Error: Receiving gp failed %d\n", n);			
 		exit(EXIT_FAILURE);
 	}
-	setupOutput(&gp);
-	/*
-	while (1) {
+	setupOutput(&gi);
+	
+	while (true) {
 		int n;
-		cur <- get current game state
-		if (cur->score1 < 3 && cur->score2 < 3) {
-			roundOutput(cur,gp->playerNum);
-			displayBoard(cur->board, gp->boardSize);
-			get turn status
-			turnOutput(turnStatus);
-			do turn;
+
+		if (!receiveState(sd, gi.boardSize, gi.playerNum)) {
+			break;
 		}
-		else {
-			endOutput(cur,gp->playerNum);
-			break; 
-		}
+
+		while (clientTurn(sd)) {}
 	}
-	*/
+
 	close(sd);
 	exit(EXIT_SUCCESS);
 }
