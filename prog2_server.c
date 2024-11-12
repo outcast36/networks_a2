@@ -311,11 +311,12 @@ int main(int argc, char **argv) {
 			close(sd); // close child access to server's listening port
 			playGame(p1_sock,p2_sock);
 			// close child access to game port
+			shutdown(p1_sock, SHUT_WR);
 			close(p1_sock); 
+			shutdown(p2_sock, SHUT_WR);
 			close(p2_sock);
 			exit(EXIT_SUCCESS);
 		}
-		break;
 	}
 	// Release server resources if no clients connect after a certain point
 	close(sd);
