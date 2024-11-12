@@ -140,7 +140,6 @@ bool validateWord(GameState* game, const char* word) {
 }
 
 void updateScores(GameState* game) {
-	printf("updating scores\n");
 	// increase inactive score by 1
 	if (game->activePlayer == 0) game->score2++;
 	else game->score1++;
@@ -148,7 +147,7 @@ void updateScores(GameState* game) {
 
 int playRound(GameState* game, int sd_client1, int sd_client2) {
 	int c;
-	while (game->score1 <3 && game->score2 <3) {
+	while (true) {
 		int active_sd = game->activePlayer == 0 ? sd_client1 : sd_client2;
 		int inactive_sd = game->activePlayer == 0 ? sd_client2 : sd_client1;
 
@@ -187,7 +186,7 @@ int playRound(GameState* game, int sd_client1, int sd_client2) {
 				if (c<0) break;
 				game->activePlayer = !game->activePlayer;
 			}
-			else {
+			else { //invalid
 				updateScores(game);
 				break;
 			}
@@ -217,8 +216,6 @@ int playGame(int p1_sock, int p2_sock) {
 	destroyGame(game);
 	return c;
 }
-
-
 
 int main(int argc, char **argv) {
 	struct protoent *ptrp; /* pointer to a protocol table entry */

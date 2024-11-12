@@ -127,7 +127,6 @@ bool clientTurn(int sd) {
 			fprintf(stderr,"Error: Receiving word_len failed\n");			
 			exit(EXIT_FAILURE);
 		}
-		printf("Client got word len %d\n", word_len);
 
 		if (word_len > 0) {
 			char word[word_len+1];
@@ -210,13 +209,10 @@ int main(int argc, char **argv) {
 	setupOutput(&gi);
 	
 	while (true) {
-		printf("getting state\n");
 		if (!receiveState(sd, gi.boardSize, gi.playerNum)) {
 			break;
 		}
-
 		while (clientTurn(sd)) {}
-		printf("end turn\n");
 	}
 	close(sd);
 	exit(EXIT_SUCCESS);
