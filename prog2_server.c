@@ -73,7 +73,17 @@ int safeSend(void* bufp, size_t len, int sd_client) {
         	fprintf(stderr,"Error: polling clients failed\n");	
             break;
         default: // send safely
-        	if (clients[0].revents & POLLOUT) send(sd_client,bufp,len,0);
+	    if (clients[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                fprintf(stderr, "Error: client disconnected or socket error\n");
+                client_health = -1;
+            } else if (clients[0].revents & POLLOUT) {
+                // Socket is ready to send data
+                ssize_t n = send(sd_client, bufp, len, 0);
+                if (n < 0) {
+                    perror("send error");
+                    client_health = -1; // Indicate send failure
+                }
+            }
 	}
 	return client_health;
 }
