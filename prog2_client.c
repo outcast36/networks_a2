@@ -210,6 +210,7 @@ int main(int argc, char **argv) {
 	setupOutput(&gi);
 	
 	while (true) {
+		printf("getting state\n");
 		if (!receiveState(sd, gi.boardSize, gi.playerNum)) {
 			break;
 		}
@@ -217,7 +218,6 @@ int main(int argc, char **argv) {
 		while (clientTurn(sd)) {}
 		printf("end turn\n");
 	}
-
 	close(sd);
 	exit(EXIT_SUCCESS);
 }
