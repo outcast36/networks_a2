@@ -99,27 +99,36 @@ int setupClient(GameInfo* params, int sd_server, int sd_client_pair) {
 	int sd_client;
 
 	if (sd_client_pair > 0) {
-        struct pollfd fds[2];
-        fds[0].fd = sd_server;
-        fds[0].events = POLLIN;
-        fds[1].fd = sd_client_pair;
-        fds[1].events = POLLHUP | POLLERR;
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(sd_server, &readfds);
+        FD_SET(sd_client_pair, &readfds);
 
-        int poll_result = poll(fds, 2, -1);
-        if (poll_result < 0) {
-        	fprintf(stderr, "Error: poll failed\n");
-        	return -1;
-        }
+        int max_fd = (sd_server > sd_client_pair) ? sd_server : sd_client_pair;
 
-        if (fds[1].revents & (POLLHUP | POLLERR)) {
-            fprintf(stderr, "Error: Socket pair disconnected\n");
+        int select_result = select(max_fd + 1, &readfds, NULL, NULL, NULL);
+        if (select_result < 0) {
+            fprintf(stderr, "Error: select failed\n");
             return -1;
         }
 
-        if (!(fds[0].revents & POLLIN)) {
+        if (FD_ISSET(sd_client_pair, &readfds)) {
+            char buffer;
+            int recv_result = recv(sd_client_pair, &buffer, 1, MSG_PEEK);
+            if (recv_result == 0) {
+                fprintf(stderr, "Error: Socket pair disconnected\n");
+                return -1;
+            } else if (recv_result < 0) {
+                perror("recv failed");
+                return -1;
+            }
+        }
+
+        if (!FD_ISSET(sd_server, &readfds)) {
             return -1;
         }
-	}
+    }
+
 	if ((sd_client = accept(sd_server,(struct sockaddr *) &cad, &alen)) < 0) {
 		fprintf(stderr, "Error: Accept new player failed\n");
 		return -1; 
@@ -334,7 +343,7 @@ int main(int argc, char **argv) {
 	}
 
 	// Loop to handle multiple clients
-	while(1){ // TODO ADD TIMEOUT FOR NO CLIENTS TO EXIT AND CLEAR SERVER RESOURCES
+	while(1){
 		st=setupClient(&p1, sd, -1);
 		if (st<0) continue;
 		else p1_sock = st;
