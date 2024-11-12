@@ -164,12 +164,19 @@ int playRound(GameState* game, int sd_client1, int sd_client2) {
 		struct pollfd clients[1];
     	clients[0].fd=active_sd;
 		clients[0].events=POLLIN; 
+
 		c=poll(clients,1,roundDuration*1000);
 		if (c<0) break; 
 		else if (c>0) {
-			recv(active_sd,&word_len,sizeof(uint8_t),0);
+			if (recv(active_sd,&word_len,sizeof(uint8_t),0) <= 0) {
+				c = -1;
+				break;
+			}
 			char word[word_len+1];
-			recv(active_sd,&word,word_len,0);
+			if (recv(active_sd,&word,word_len,0) <= 0) {
+				c = -1;
+				break;
+			}
 			word[word_len] = '\0';
 
 			// Send (1,word) or (0,0) on validation check
@@ -206,10 +213,13 @@ void destroyGame(GameState* game) {
 int playGame(int p1_sock, int p2_sock) {	
 	GameState* game = initGame();
 	int c;
-	while (game->score1<3 && game->score2<3) {
+	while (true) {
 		setupRound(game);
 		c=updateClients(game,p1_sock,p2_sock);
 		if (c<0) break;
+
+		if (game->score1==3 || game->score2==3) break;
+
 		c=playRound(game,p1_sock,p2_sock);
 		if (c<0) break;
 	}
