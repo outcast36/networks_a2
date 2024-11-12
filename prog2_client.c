@@ -57,10 +57,11 @@ bool receiveState(int sd, int boardSize, const char playerNum) {
 		return false;
 
 	} else {
-		printf("Round %d:\n", roundNumber);
-		printf("Score: ");
+		printf("\n");
+		printf("Round %d...\n", roundNumber);
+		printf("Score is ");
 		if (playerNum=='2') printf("%d - %d\n", score2, score1);
-		else printf("%d - %d\n", score1, score2);
+		else printf("%d-%d\n", score1, score2);
 		displayBoard(board, boardSize);
 		return true;
 	}

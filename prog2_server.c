@@ -93,14 +93,38 @@ int safeSend(void* bufp, size_t len, int sd_client) {
 // char indicating whether it is player 1 (‘1’) or player 2 (‘2’)
 // uint8_t indicating the number of letters on the “board”
 // uint8_t indicating the number of seconds you have per turn
-int setupClient(GameInfo* params, int sd_server) {
+int setupClient(GameInfo* params, int sd_server, int sd_client_pair) {
 	struct sockaddr_in cad; /* structure to hold client's address */
 	socklen_t alen=sizeof(cad);
 	int sd_client;
+
+	if (sd_client_pair > 0) {
+        struct pollfd fds[2];
+        fds[0].fd = sd_server;
+        fds[0].events = POLLIN;
+        fds[1].fd = sd_client_pair;
+        fds[1].events = POLLHUP | POLLERR;
+
+        int poll_result = poll(fds, 2, -1);
+        if (poll_result < 0) {
+        	fprintf(stderr, "Error: poll failed\n");
+        	return -1;
+        }
+
+        if (fds[1].revents & (POLLHUP | POLLERR)) {
+            fprintf(stderr, "Error: Socket pair disconnected\n");
+            return -1;
+        }
+
+        if (!(fds[0].revents & POLLIN)) {
+            return -1;
+        }
+	}
 	if ((sd_client = accept(sd_server,(struct sockaddr *) &cad, &alen)) < 0) {
 		fprintf(stderr, "Error: Accept new player failed\n");
 		return -1; 
 	}
+
 	if (safeSend(params, sizeof(GameInfo),sd_client) < 0) {
 		fprintf(stderr, "Error: Send client parameters failed\n");
 		close(sd_client);
@@ -311,11 +335,11 @@ int main(int argc, char **argv) {
 
 	// Loop to handle multiple clients
 	while(1){ // TODO ADD TIMEOUT FOR NO CLIENTS TO EXIT AND CLEAR SERVER RESOURCES
-		st=setupClient(&p1, sd);
+		st=setupClient(&p1, sd, -1);
 		if (st<0) continue;
 		else p1_sock = st;
 
-		st=setupClient(&p2, sd);
+		st=setupClient(&p2, sd, p1_sock);
 		if (st<0) continue;
 		else p2_sock = st;
 
