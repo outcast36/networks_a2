@@ -121,16 +121,17 @@ bool clientTurn(int sd) {
 
 	} else {
 		printf("Please wait for opponent to enter word...\n");
-
 		uint8_t word_len;
+		
 		if (recv(sd, &word_len, sizeof(word_len), 0) != sizeof(word_len)){
 			fprintf(stderr,"Error: Receiving word_len failed\n");			
 			exit(EXIT_FAILURE);
 		}
+		printf("Client got word len %d\n", word_len);
 
 		if (word_len > 0) {
 			char word[word_len+1];
-			if (recv(sd, &word, sizeof(word), 0) != sizeof(word)){
+			if (recv(sd, &word, word_len, 0) != word_len){
 				fprintf(stderr,"Error: Receiving word failed\n");			
 				exit(EXIT_FAILURE);
 			}
@@ -209,51 +210,14 @@ int main(int argc, char **argv) {
 	setupOutput(&gi);
 	
 	while (true) {
-		int n;
-
 		if (!receiveState(sd, gi.boardSize, gi.playerNum)) {
 			break;
 		}
 
 		while (clientTurn(sd)) {}
+		printf("end turn\n");
 	}
 
 	close(sd);
 	exit(EXIT_SUCCESS);
 }
-/*
-	func prompt_and_send() {
-		prompt
-		send
-	}
-
-	func recv_and_validate() {
-		recv
-		validate
-	}
-
-	func turn() {
-		recv game state -> myTurnOrder
-		
-		func_array[myTurnOrder]
-		func_array[(myTurnOrder + 1) % 2]
-	}
-
-	func round() {
-		recv round number
-		recv score
-		recv board
-		while (!invalid) {
-		
-			turn()
-
-		}
-	}
-	\
-
-	funct invalid() {
-		word is guessesd this round or word is not in global server dict or word has letter not in board
-		for letter in word:
-			if l
-	}
-*/

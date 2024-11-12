@@ -15,7 +15,6 @@
 uint8_t boardSize, roundDuration;
 TrieNode* wordList;
 
-
 TrieNode* readLexicon(const char* filePath) {
 	TrieNode* root = emptyTrie();
 	FILE* f = fopen(filePath, "r");
@@ -32,7 +31,6 @@ TrieNode* readLexicon(const char* filePath) {
 	return root;
 }
 
-
 GameState* initGame() {
 	GameState* game = (GameState*) malloc(sizeof(GameState));
 	game->board = malloc(boardSize);
@@ -42,7 +40,6 @@ GameState* initGame() {
 	game->score2 = 0;
 	return game;
 }
-
 
 void generateBoard(char* board) {
 	bool containsVowel = false;
@@ -61,48 +58,23 @@ void generateBoard(char* board) {
 	}
 }
 
+// Poll client socket before sending
+int safeSend(void* bufp, size_t len, int sd_client) {
+	struct pollfd clients[1];
+    clients[0].fd=sd_client;
+	clients[0].events=POLLOUT; 
 
-// Wrap poll, send, and recv into this function to monitor client health
-int transmit(void* bufp, size_t len, int mode, int p1_sock, int p2_sock) {
-	struct pollfd clients[2];
-    clients[0].fd=p1_sock;
-	clients[0].events=mode; // one or the other 
-   	clients[1].fd=p2_sock;
-	clients[1].events=mode; // one or the other
-
-	int timeout = (mode == POLLOUT) ? 5 : roundDuration;
-
-    int client_health = poll(clients,2,timeout*1000);
+    int client_health = poll(clients,1,5000); // 5 second timeout on server send to client
 	switch (client_health) {
         case 0: // timeout 
-        	// poll blocked for timeout seconds and neither client socket became ready:
-        	// neither client was able to read or write without blocking so disconnect
             fprintf(stderr,"Error: no client data for N seconds\n");
 			break;
     	case -1: // error (disconnect?)
         	fprintf(stderr,"Error: polling clients failed\n");	
             break;
-        default:
-            // examine for recv possibility -- one client or the other, never both
-        	if (clients[0].revents & POLLIN) recv(p1_sock,bufp,len,0);
-
-        	if (clients[1].revents & POLLIN) recv(p2_sock,bufp,len,0);
-        	// examine for send possibility
-			// start of turn: Y/N -> check who active player is
-			// both cases after guessing word: (1,word), (0,0) -> check who active player is
-        	if (clients[0].revents & POLLOUT) {
-        		/*
-				bool p1_val=((player1 is inactive) && buf=='N') || ((player1 is active) && buf=='Y');
-				if (p1_val) send(p1_sock,buf,sizeof(char),0);
-				*/
-				send(p1_sock,bufp,len,0);
-			}
-        	if (clients[1].revents & POLLOUT) send(p2_sock,bufp,len,0);
+        default: // send safely
+        	if (clients[0].revents & POLLOUT) send(sd_client,bufp,len,0);
 	}
-
-	//printf("%d\n", client_health);
-
-
 	return client_health;
 }
 
@@ -112,20 +84,17 @@ int transmit(void* bufp, size_t len, int mode, int p1_sock, int p2_sock) {
 // uint8_t indicating the number of seconds you have per turn
 int setupClient(GameInfo* params, int sd_server) {
 	struct sockaddr_in cad; /* structure to hold client's address */
-
 	socklen_t alen=sizeof(cad);
 	int sd_client;
 	if ((sd_client = accept(sd_server,(struct sockaddr *) &cad, &alen)) < 0) {
 		fprintf(stderr, "Error: Accept new player failed\n");
 		return -1; 
 	}
-
-	if (transmit(params, sizeof(GameInfo), POLLOUT, sd_client, -1) < 0) {
+	if (safeSend(params, sizeof(GameInfo),sd_client) < 0) {
 		fprintf(stderr, "Error: Send client parameters failed\n");
 		close(sd_client);
 		return -1;
 	}
-
 	return sd_client;
 }
 
@@ -141,20 +110,17 @@ void setupRound(GameState* game) {
 
 int updateClients(GameState* game, int sd_client1, int sd_client2) {
 	int c;
-
 	for (int i = 0; i < 2; i++) {
 		int active_sd = i == 0 ? sd_client1 : sd_client2;
-
-		c=transmit(&game->score1,sizeof(uint8_t),POLLOUT,active_sd,-1);
+		c=safeSend(&game->score1,sizeof(uint8_t),active_sd);
 		if (c<0) return c;
-		c=transmit(&game->score2,sizeof(uint8_t),POLLOUT,active_sd,-1);
+		c=safeSend(&game->score2,sizeof(uint8_t),active_sd);
 		if (c<0) return c;
-		c=transmit(&game->roundNumber,sizeof(int),POLLOUT,active_sd,-1);
+		c=safeSend(&game->roundNumber,sizeof(int),active_sd);
 		if (c<0) return c;
-		c=transmit(game->board,sizeof(game->board),POLLOUT,active_sd,-1);
+		c=safeSend(game->board,sizeof(game->board),active_sd);
 		if (c<0) return c;
 	}
-
 	return 0;
 }
 
@@ -173,77 +139,58 @@ bool validateWord(GameState* game, const char* word) {
     return !contains(game->guessed,word) && contains(wordList, word);
 }
 
+void endRound(GameState* game) {
+	game->roundNumber++;
+	// increase inactive score by 1
+	if (game->activePlayer == 0) game->score2++;
+	else game->score1++;
+	game->activePlayer=(game->roundNumber+1)%2;
+}
 
 int playRound(GameState* game, int sd_client1, int sd_client2) {
 	int c;
-	while (true) {
-
+	while (game->score1 <3 && game->score2 <3) {
 		int active_sd = game->activePlayer == 0 ? sd_client1 : sd_client2;
 		int inactive_sd = game->activePlayer == 0 ? sd_client2 : sd_client1;
 
-
+		// Send active player Y and inactive player N
 		char code1 = game->activePlayer == 0 ? 'Y' : 'N';
 		char code2 = game->activePlayer == 1 ? 'Y' : 'N';
-
-
-		//send(sd_client1, &code1, sizeof(code1), 0);
-
-		c=transmit(&code1,sizeof(code1),POLLOUT,sd_client1,-1);
+		c=safeSend(&code1,sizeof(code1),sd_client1);
 		if (c<0) break;
-		c=transmit(&code2,sizeof(code2),POLLOUT,sd_client2,-1);
+		c=safeSend(&code2,sizeof(code2),sd_client2);
 		if (c<0) break;
 
-
+		// Receive word from active player within N seconds
 		uint8_t word_len;
-		c=transmit(&word_len,sizeof(word_len),POLLIN,active_sd,-1);
-		if (c<0) break;
-		char word[word_len+1];
-		c=transmit(&word,word_len,POLLIN,active_sd,-1);
-		if (c<0) break;
+		struct pollfd clients[1];
+    	clients[0].fd=active_sd;
+		clients[0].events=POLLIN; 
+		c=poll(clients,1,roundDuration*1000);
+		if (c<0) break; 
+		else if (c>0) {
+			recv(active_sd,&word_len,sizeof(uint8_t),0);
+			char word[word_len+1];
+			recv(active_sd,&word,word_len,0);
+			word[word_len] = '\0';
 
-		word[word_len] = '\0';
-
-
-		bool valid = validateWord(game, word);
-
-
-		uint8_t active_ret_code = valid ? 1 : 0;
-		uint8_t inactive_ret_code = valid ? word_len : 0;
-
-		c=transmit(&active_ret_code,sizeof(active_ret_code),POLLOUT,active_sd,-1);
-		if (c<0) break;
-		c=transmit(&inactive_ret_code,sizeof(inactive_ret_code),POLLOUT,inactive_sd,-1);
-		if (c<0) break;
-
-		if (valid) {
-			c=transmit(&word,word_len,POLLOUT,inactive_sd,-1);
+			// Send (1,word) or (0,0) on validation check
+			bool valid = validateWord(game, word);
+			uint8_t active_ret_code = valid ? 1 : 0;
+			uint8_t inactive_ret_code = valid ? word_len : 0;
+			c=safeSend(&active_ret_code,sizeof(active_ret_code),active_sd);
 			if (c<0) break;
-		} else {
-			break;
+			c=safeSend(&inactive_ret_code,sizeof(inactive_ret_code),inactive_sd);
+			if (c<0) break;
+			if (valid) {
+				insertWord(game->guessed, word);
+				c=safeSend(&word,word_len,inactive_sd);
+				if (c<0) break;
+				game->activePlayer = !game->activePlayer;
+			}
+			else endRound(game);
 		}
-
-
-		/*
-		c=transmit() get word from acitve -> // handled by poll() wait roundDuration seconds for active player to send a word
-		if (c>0) valid=validateWord(word);
-		
-		if (valid) {
-			send 1 (valid flag) to active player
-			increase active score by 1
-			c=1; 
-			send word message to inactive player
-		}
-		else { // handles timeout case since valid is only updated to be true if word is received before poll() times out
-			send 0 (invalid flag) to both players
-			c=0;
-			game->roundNumber++:
-			// increase inactive score by 1
-			if (game->activePlayer == 0) game->score1++;
-			else game->score2++;
-			
-		}
-		*/
-		
+		else endRound(game); //timeout case
 	}
 	return c;
 }
@@ -259,16 +206,11 @@ int playGame(int p1_sock, int p2_sock) {
 	GameState* game = initGame();
 	int c;
 	while (game->score1<3 && game->score2<3) {
-		printf("0\n");
 		setupRound(game);
-		
-		printf("1\n");
 		c=updateClients(game,p1_sock,p2_sock);
 		if (c<0) break;
-		printf("2\n");
 		c=playRound(game,p1_sock,p2_sock);
 		if (c<0) break;
-		printf("3\n");
 	}
 	destroyGame(game);
 	return c;
