@@ -11,6 +11,7 @@
 #include "prog2.h"
 
 #define QLEN 6 /* size of request queue */
+#define TIMEOUT_DURATION 5
 
 uint8_t boardSize, roundDuration;
 TrieNode* wordList;
@@ -64,7 +65,7 @@ int safeSend(void* bufp, size_t len, int sd_client) {
     clients[0].fd=sd_client;
 	clients[0].events=POLLOUT; 
 
-    int client_health = poll(clients,1,5000); // 5 second timeout on server send to client
+    int client_health = poll(clients,1,TIMEOUT_DURATION * 1000); // 5 second timeout on server send to client
 	switch (client_health) {
         case 0: // timeout 
             fprintf(stderr,"Error: no client data for N seconds\n");
@@ -175,22 +176,29 @@ int playRound(GameState* game, int sd_client1, int sd_client2) {
     	clients[0].fd=active_sd;
 		clients[0].events=POLLIN; 
 
-		c=poll(clients,1,roundDuration*1000);
+		c=poll(clients,1,(roundDuration+TIMEOUT_DURATION)*1000);
 		if (c<0) break; 
-		else if (c>0) {
+		else {
 			if (recv(active_sd,&word_len,sizeof(uint8_t),0) <= 0) {
 				c = -1;
 				break;
 			}
-			char word[word_len+1];
-			if (recv(active_sd,&word,word_len,0) <= 0) {
-				c = -1;
-				break;
-			}
-			word[word_len] = '\0';
 
-			// Send (1,word) or (0,0) on validation check
-			bool valid = validateWord(game, word);
+			char word[word_len+1];
+			bool valid;
+
+			if (word_len > 0) {
+				if (recv(active_sd,&word,word_len,0) <= 0) {
+					c = -1;
+					break;
+				}
+				word[word_len] = '\0';
+
+				valid = validateWord(game, word);
+			} else {
+				valid = false;
+			}
+
 			uint8_t active_ret_code = valid ? 1 : 0;
 			uint8_t inactive_ret_code = valid ? word_len : 0;
 			c=safeSend(&active_ret_code,sizeof(active_ret_code),active_sd);
@@ -208,7 +216,6 @@ int playRound(GameState* game, int sd_client1, int sd_client2) {
 				break;
 			}
 		}
-		else updateScores(game); //timeout case
 	}
 	return c;
 }

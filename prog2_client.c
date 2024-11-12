@@ -62,7 +62,6 @@ bool receiveState(int sd, int boardSize, const char playerNum) {
 		if (playerNum=='2') printf("%d - %d\n", score2, score1);
 		else printf("%d - %d\n", score1, score2);
 		displayBoard(board, boardSize);
-
 		return true;
 	}
 }
@@ -77,7 +76,7 @@ void setupOutput(const GameInfo* params) {
 	printf("Seconds per turn: %d\n",params->roundDuration);
 }
 
-bool clientTurn(int sd) {
+bool clientTurn(int sd, int roundDuration) {
 	char code;
 	if (recv(sd, &code, sizeof(code), 0) != sizeof(char)){
 		fprintf(stderr,"Error: Receiving code failed\n");			
@@ -86,23 +85,39 @@ bool clientTurn(int sd) {
 
 	if (code == 'Y') {
 		printf("Your turn, enter word: ");
+		fflush(stdout);
 
 		char buffer[MAX_WORD_LEN];
-		if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
-	        printf("Error reading input\n");
+
+	    int fd = fileno(stdin);
+
+	    struct pollfd fds[1];
+	    fds[0].fd = STDIN_FILENO;
+	    fds[0].events = POLLIN;
+
+	    int poll_result = poll(fds, 1, roundDuration*1000);;
+	    if (poll_result > 0) {
+	        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+		        fprintf(stderr, "Error: fgets failed\n");
+		        exit(EXIT_FAILURE);
+		    }
+	    } else if (poll_result < 0) {
+	        fprintf(stderr, "Error: poll failed\n");
 	        exit(EXIT_FAILURE);
 	    }
 
-	    uint8_t word_len = strlen(buffer) - 1;
+	   	uint8_t word_len = poll_result == 0 ? 0 : strlen(buffer) - 1;
 
 	    if (send(sd, &word_len, sizeof(word_len), 0) < 0) {
-	    	printf("Sending word_len failed\n");
+	    	fprintf(stderr,"Error: Sending word_len failed\n");
 	    	exit(EXIT_FAILURE);
 	    }
 
-		if (send(sd, &buffer, word_len, 0) < 0) {
-	    	printf("Sending word failed\n");
-	    	exit(EXIT_FAILURE);
+		if (word_len > 0) {
+			if (send(sd, &buffer, word_len, 0) < 0) {
+				fprintf(stderr,"Error: Sending word failed\n");
+		    	exit(EXIT_FAILURE);
+			}
 		}
 
 		uint8_t ret_code;
@@ -212,7 +227,7 @@ int main(int argc, char **argv) {
 		if (!receiveState(sd, gi.boardSize, gi.playerNum)) {
 			break;
 		}
-		while (clientTurn(sd)) {}
+		while (clientTurn(sd, gi.roundDuration)) {}
 	}
 	close(sd);
 	exit(EXIT_SUCCESS);
